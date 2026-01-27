@@ -20,9 +20,7 @@ Available through the [Ryde Ventures plugin marketplace](https://github.com/ryde
 
 ### Step 2: Install the bash script
 
-The plugin includes a bash script that runs the autonomous loop. The installer copies two files to your home directory:
-- `ralph` command to `~/.local/bin/`
-- `ralph-prompt.md` to `~/.claude/`
+The plugin includes a bash script that runs the autonomous loop. The installer creates a symlink to `ralph` in `~/.local/bin/`.
 
 Run the installer:
 
@@ -37,9 +35,13 @@ echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
+### Updating
+
+After updating the plugin in Claude Code, re-run the installer to update the symlinks. The `ralph` command will remind you if this is needed.
+
 ### Manual Installation
 
-Alternatively, copy the files manually from this repository:
+Alternatively, copy the files manually from this repository. Note: manual installs use copies, not symlinks, so you'll need to re-copy after updates.
 
 **Bash script and prompt (required):**
 
@@ -170,8 +172,8 @@ Ralph works best on greenfield features with clear acceptance criteria. Interven
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `ralph` | `~/.local/bin/ralph` | Bash script (the loop) |
-| `ralph-prompt.md` | `~/.claude/ralph-prompt.md` | Instructions for each iteration |
+| `ralph` | `~/.local/bin/ralph` | Symlink to bash script |
+| `ralph-prompt.md` | Plugin cache | Instructions for each iteration |
 | `/ralph` skill | Plugin | Initializes projects |
 
 ## See also

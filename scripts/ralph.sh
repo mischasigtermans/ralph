@@ -5,7 +5,16 @@
 set -e
 
 MAX_ITERATIONS=${1:-20}
-PROMPT_FILE="$HOME/.claude/ralph-prompt.md"
+
+# Find prompt file: plugin cache first, fallback to ~/.claude/
+PLUGIN_DIR=$(ls -d "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/ 2>/dev/null | head -1)
+if [ -n "$PLUGIN_DIR" ] && [ -f "${PLUGIN_DIR}scripts/ralph-prompt.md" ]; then
+    PROMPT_FILE="${PLUGIN_DIR}scripts/ralph-prompt.md"
+elif [ -f "$HOME/.claude/ralph-prompt.md" ]; then
+    PROMPT_FILE="$HOME/.claude/ralph-prompt.md"
+else
+    PROMPT_FILE=""
+fi
 
 # Braille spinner frames
 SPINNER=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -15,9 +24,13 @@ if ! echo -e "⠋" | grep -q "⠋" 2>/dev/null; then
 fi
 
 # Validate prompt file exists
-if [ ! -f "$PROMPT_FILE" ]; then
-    echo "Error: Ralph prompt file not found at $PROMPT_FILE"
-    echo "Run the install script first: ./install.sh"
+if [ -z "$PROMPT_FILE" ]; then
+    echo "Error: Ralph prompt file not found."
+    echo ""
+    echo "Either install the plugin in Claude Code:"
+    echo "  /plugin install ralph@rydeventures-claude-plugins"
+    echo ""
+    echo "Or copy ralph-prompt.md to ~/.claude/"
     exit 1
 fi
 

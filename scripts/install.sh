@@ -4,24 +4,19 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="${1:-$HOME/.local/bin}"
+INSTALL_DIR="$HOME/.local/bin"
 
 echo "Ralph Installer"
 echo "==============="
 echo ""
 
-# Create directories if needed
-mkdir -p "$HOME/.claude"
+# Create directory if needed
 mkdir -p "$INSTALL_DIR"
 
-# Copy prompt file
-echo "→ Installing ralph-prompt.md to ~/.claude/"
-cp "$SCRIPT_DIR/ralph-prompt.md" "$HOME/.claude/ralph-prompt.md"
-
-# Copy and make executable
-echo "→ Installing ralph to $INSTALL_DIR/"
-cp "$SCRIPT_DIR/ralph.sh" "$INSTALL_DIR/ralph"
-chmod +x "$INSTALL_DIR/ralph"
+# Symlink ralph script (remove existing first)
+echo "→ Linking ralph to $INSTALL_DIR/"
+rm -f "$INSTALL_DIR/ralph"
+ln -s "$SCRIPT_DIR/ralph.sh" "$INSTALL_DIR/ralph"
 
 echo ""
 echo "✓ Installation complete!"
