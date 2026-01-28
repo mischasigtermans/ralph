@@ -1,7 +1,7 @@
 {
   "name": "ralph",
   "description": "Autonomous AI development loop for Claude Code. Run Claude repeatedly until your user stories are complete.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "Mischa Sigtermans"
   },

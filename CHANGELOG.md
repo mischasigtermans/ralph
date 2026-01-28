@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.1.1] - 2026-01-28
+- Auto-detect roadmap.json and prompt to run in roadmap mode (defaults to yes)
+
 ## [1.1.0] - 2026-01-28
 - Added Loopception: `--roadmap` flag for multi-phase project orchestration (a loop within a loop)
 - Added `--pause` flag to pause between phases for review

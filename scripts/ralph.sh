@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 # Help text
 show_help() {
@@ -79,6 +79,16 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Check if roadmap exists but --roadmap wasn't used
+if [ "$ROADMAP_MODE" = false ] && [ -f ".ralph/roadmap.json" ]; then
+    echo "Found .ralph/roadmap.json"
+    read -p "Run in roadmap mode? [Y/n] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        ROADMAP_MODE=true
+    fi
+fi
 
 # Find prompt file: plugin cache first, fallback to ~/.claude/
 PLUGIN_DIR=$(ls -d "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/ 2>/dev/null | head -1)
