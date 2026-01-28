@@ -81,13 +81,14 @@ Open Claude Code in your project directory and run:
 /ralph
 ```
 
-Claude will ask about your feature, then generate a `.ralph/` directory:
+Claude will ask about your feature and analyze the scope. For smaller tasks, it creates stories directly. For larger tasks, it offers to create a roadmap with phases.
 
 ```
 .ralph/
 ├── stories.json    # Your user stories
 ├── progress.txt    # Implementation log per iteration
-└── learnings.txt   # Patterns and gotchas (persists across runs)
+├── learnings.txt   # Patterns and gotchas (persists across runs)
+└── roadmap.json    # (optional) Multi-phase project roadmap
 ```
 
 ### 2. Run the loop
@@ -95,10 +96,68 @@ Claude will ask about your feature, then generate a `.ralph/` directory:
 Exit Claude Code and run from terminal:
 
 ```bash
-ralph        # Default: 20 iterations
-ralph 50     # Custom: 50 iterations
+ralph        # Runs until all stories complete
+ralph 50     # Limit to 50 iterations
 ralph 1      # Single iteration (useful for testing)
 ```
+
+### Loopception
+
+For larger projects, Ralph can go deeper. A loop within a loop: phases containing stories, each phase spawning its own Ralph loop until complete.
+
+When `/ralph` detects a multi-phase task, it offers to create a roadmap:
+
+```
+/ralph "build a dashboard with auth, API, and frontend"
+
+Claude: "This looks like it could be split into phases:
+1. Authentication
+2. API layer
+3. Frontend dashboard
+
+Should I create a roadmap with phases, or keep it as one set of stories?"
+```
+
+If you choose roadmap, it creates `.ralph/roadmap.json`:
+
+```json
+{
+  "project": "Dashboard",
+  "phases": [
+    {
+      "id": 1,
+      "title": "Authentication",
+      "description": ["User model and migrations", "Login/logout endpoints"],
+      "complete": false
+    },
+    {
+      "id": 2,
+      "title": "API Layer",
+      "description": ["REST endpoints for CRUD", "Authentication middleware"],
+      "complete": false
+    },
+    {
+      "id": 3,
+      "title": "Frontend",
+      "description": ["Dashboard components", "Forms and validation"],
+      "complete": false
+    }
+  ]
+}
+```
+
+Then run:
+
+```bash
+ralph --roadmap                 # Runs all phases
+ralph --roadmap --pause         # Pauses between phases for review
+```
+
+Each phase:
+1. Sets up `.ralph/` with stories for that phase
+2. Runs iterations until all stories complete
+3. Marks the phase `complete: true` in roadmap.json
+4. Continues to next phase (or pauses if `--pause`)
 
 ### 3. Review results
 
@@ -126,6 +185,33 @@ When Ralph finishes (or hits max iterations), check:
 │  3. Implements highest priority incomplete story        │
 │  4. Runs tests, commits, updates files                  │
 │  5. Outputs <promise>COMPLETE</promise> when done       │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Loopception mode
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  /ralph (detects large scope)                           │
+│  Creates .ralph/roadmap.json with phases                │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  ralph --roadmap                                        │
+│  Outer loop: iterates through phases                    │
+│                                                         │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  For each phase:                                  │  │
+│  │  1. Spawns Claude to run /ralph for phase         │  │
+│  │  2. Creates stories.json for this phase           │  │
+│  │                                                   │  │
+│  │  ┌─────────────────────────────────────────────┐  │  │
+│  │  │  Inner loop: iterates through stories       │  │  │
+│  │  │  (same as regular ralph)                    │  │  │
+│  │  └─────────────────────────────────────────────┘  │  │
+│  │                                                   │  │
+│  │  3. Marks phase complete in roadmap.json          │  │
+│  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
