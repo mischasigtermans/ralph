@@ -19,12 +19,17 @@ show_help() {
     echo "  ralph -h, --help"
 }
 
+# Compare versions (returns 0 if $1 > $2)
+version_gt() {
+    [ "$(printf '%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ] && [ "$1" != "$2" ]
+}
+
 # Check for plugin updates
 check_version() {
     local plugin_json=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/.claude-plugin/plugin.json 2>/dev/null | tail -1)
     if [ -n "$plugin_json" ]; then
         local plugin_version=$(jq -r '.version // empty' "$plugin_json" 2>/dev/null)
-        if [ -n "$plugin_version" ] && [ "$plugin_version" != "$VERSION" ]; then
+        if [ -n "$plugin_version" ] && version_gt "$plugin_version" "$VERSION"; then
             echo "Update available: $VERSION → $plugin_version"
             read -p "Update now? [Y/n] " -n 1 -r
             echo ""
