@@ -1,9 +1,61 @@
 #!/bin/bash
 # Ralph - Autonomous AI development loop for Claude Code
-# Usage: ralph [max_iterations]
-#        ralph --roadmap [--pause]
 
 set -e
+
+VERSION="1.1.0"
+
+# Help text
+show_help() {
+    echo "ralph - Autonomous AI development loop for Claude Code"
+    echo ""
+    echo "Usage:"
+    echo "  ralph              Run until all stories complete"
+    echo "  ralph 50           Limit to 50 iterations"
+    echo "  ralph --roadmap    Run phases from .ralph/roadmap.json (Loopception)"
+    echo "  ralph --pause      Pause between phases (with --roadmap)"
+    echo "  ralph update       Re-run installer to refresh symlink"
+    echo "  ralph -v, --version"
+    echo "  ralph -h, --help"
+}
+
+# Check for plugin updates
+check_version() {
+    local plugin_json=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/.claude-plugin/plugin.json 2>/dev/null | head -1)
+    if [ -n "$plugin_json" ]; then
+        local plugin_version=$(jq -r '.version // empty' "$plugin_json" 2>/dev/null)
+        if [ -n "$plugin_version" ] && [ "$plugin_version" != "$VERSION" ]; then
+            echo "Update available: $VERSION → $plugin_version"
+            echo "Run 'ralph update' to upgrade"
+            echo ""
+        fi
+    fi
+}
+
+# Handle immediate commands first
+case "${1:-}" in
+    -v|--version)
+        echo "ralph $VERSION"
+        exit 0
+        ;;
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+    update)
+        INSTALLER=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/scripts/install.sh 2>/dev/null | head -1)
+        if [ -n "$INSTALLER" ]; then
+            exec "$INSTALLER"
+        else
+            echo "Error: Plugin not found. Install via Claude Code first:"
+            echo "  /plugin install ralph@rydeventures-claude-plugins"
+            exit 1
+        fi
+        ;;
+esac
+
+# Check for updates on normal runs
+check_version
 
 # Defaults
 MAX_ITERATIONS=0

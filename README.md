@@ -96,9 +96,12 @@ Claude will ask about your feature and analyze the scope. For smaller tasks, it 
 Exit Claude Code and run from terminal:
 
 ```bash
-ralph        # Runs until all stories complete
-ralph 50     # Limit to 50 iterations
-ralph 1      # Single iteration (useful for testing)
+ralph              # Runs until all stories complete
+ralph 50           # Limit to 50 iterations
+ralph 1            # Single iteration (useful for testing)
+ralph update       # Refresh symlink after plugin update
+ralph --version    # Show version
+ralph --help       # Show help
 ```
 
 ### Loopception

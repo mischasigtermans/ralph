@@ -6,6 +6,8 @@
 - `/ralph` now detects scope and offers to create a roadmap for large tasks
 - Roadmap stored as `.ralph/roadmap.json` for reliable jq parsing
 - Default iterations changed to infinite (use `ralph 50` to limit)
+- Added `ralph update` to refresh symlink after plugin updates
+- Added `ralph --version` and `ralph --help`
 - Refactored bash script with reusable functions
 
 ## [1.0.1] - 2026-01-27
