@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.2] - 2026-01-28
+- Fixed version check comparing against oldest cached version instead of newest
+- Update prompt asks to run update now (defaults to yes)
+
 ## [1.1.1] - 2026-01-28
 - Auto-detect roadmap.json and prompt to run in roadmap mode (defaults to yes)
 

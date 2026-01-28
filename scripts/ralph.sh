@@ -3,7 +3,7 @@
 
 set -e
 
-VERSION="1.1.1"
+VERSION="1.1.2"
 
 # Help text
 show_help() {
@@ -21,13 +21,20 @@ show_help() {
 
 # Check for plugin updates
 check_version() {
-    local plugin_json=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/.claude-plugin/plugin.json 2>/dev/null | head -1)
+    local plugin_json=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/.claude-plugin/plugin.json 2>/dev/null | tail -1)
     if [ -n "$plugin_json" ]; then
         local plugin_version=$(jq -r '.version // empty' "$plugin_json" 2>/dev/null)
         if [ -n "$plugin_version" ] && [ "$plugin_version" != "$VERSION" ]; then
             echo "Update available: $VERSION → $plugin_version"
-            echo "Run 'ralph update' to upgrade"
+            read -p "Update now? [Y/n] " -n 1 -r
             echo ""
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                INSTALLER=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/scripts/install.sh 2>/dev/null | tail -1)
+                if [ -n "$INSTALLER" ]; then
+                    exec "$INSTALLER"
+                fi
+            fi
+            exit 0
         fi
     fi
 }
@@ -43,7 +50,7 @@ case "${1:-}" in
         exit 0
         ;;
     update)
-        INSTALLER=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/scripts/install.sh 2>/dev/null | head -1)
+        INSTALLER=$(ls "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/scripts/install.sh 2>/dev/null | tail -1)
         if [ -n "$INSTALLER" ]; then
             exec "$INSTALLER"
         else
@@ -91,7 +98,7 @@ if [ "$ROADMAP_MODE" = false ] && [ -f ".ralph/roadmap.json" ]; then
 fi
 
 # Find prompt file: plugin cache first, fallback to ~/.claude/
-PLUGIN_DIR=$(ls -d "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/ 2>/dev/null | head -1)
+PLUGIN_DIR=$(ls -d "$HOME/.claude/plugins/cache/rydeventures-claude-plugins/ralph"/*/ 2>/dev/null | tail -1)
 if [ -n "$PLUGIN_DIR" ] && [ -f "${PLUGIN_DIR}scripts/ralph-prompt.md" ]; then
     PROMPT_FILE="${PLUGIN_DIR}scripts/ralph-prompt.md"
 elif [ -f "$HOME/.claude/ralph-prompt.md" ]; then
