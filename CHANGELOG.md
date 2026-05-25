@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0] - 2026-05-25
+
+**Added**
+
+- `RALPH_BUILDER_EXECUTOR` / `RALPH_PLANNER_EXECUTOR` env vars: pick `claude` or `grok` per role. Both default to `claude`. Model defaults switch automatically with the executor (`grok-build` for grok, `claude-sonnet-4-6` / `claude-opus-4-7` for claude). Both binaries share an almost-identical flag surface (`--agents`, `--agent`, `--model`, `--output-format json`); the script branches on the few that differ (`--always-approve` vs `--dangerously-skip-permissions`, `-p` vs `--print`).
+- `.ralph/state.json` now carries `builder_executor` and `planner_executor` fields alongside `builder_model` / `planner_model`, and the loop reads all four. Previously the model fields were descriptive only; now they're load-bearing. Precedence: env var beats state.json, state.json beats built-in default. Existing state.json files without the new fields fall through cleanly to defaults.
+- Captures per-iteration stderr separately at `.ralph/logs/iter-NN-{builder|planner}.log.stderr`. The old setup merged stderr into the JSON log via `2>&1`, which broke `jq` parsing for executors that emit non-JSON to stderr (Grok writes an auth-bootstrap line).
+- Spinner label now shows `executor:model` so the active CLI shows at a glance.
+
+**Changed**
+
+- `version` field in `scripts/ralph.sh` and `skills/ralph/SKILL.md` realigned with `plugin.json`. They had drifted to an internal 2.x numbering during the 1.0.0 rewrite; plugin.json is the source of truth and all three now move in lockstep.
+- SKILL `/ralph` setup writes `builder_executor` / `planner_executor` to the initial `state.json` (both default to `claude`). v1-to-v2 migration also writes them.
+
+**Notes**
+
+- Grok iterations don't surface per-call cost. `state.json` cost tracking accumulates only Claude iterations; Grok contributes 0.
+- Projects with `RALPH_*_MODEL` env vars set in shell config gain influence from `state.json` on this release. Env vars still win; the change is that state.json values are no longer ignored when env is unset. If a project previously relied on the hard-coded default winning over its own state.json (an edge case), set the env var explicitly.
+
 ## [1.0.0] - 2026-05-09
 
 Major rewrite. Two-agent loop, prose brief, state-aware bash runtime.

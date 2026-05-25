@@ -1,6 +1,6 @@
 {
   "name": "ralph",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "An opinionated take on the Ralph autonomous loop for Claude Code. Describe a feature, walk away, come back to commits.",
   "author": { "name": "Mischa Sigtermans" },
   "homepage": "https://github.com/mischasigtermans/claude-ralph",

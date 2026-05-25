@@ -1,7 +1,7 @@
 ---
 name: ralph
 description: Use this skill when the user invokes "/ralph" to set up a project for the autonomous Ralph loop. Conducts a short PM interview, writes a prose brief plus a story list, and configures the loop's planner cadence. Migrates v1 .ralph/ directories on the fly. Never starts implementing. The user runs `ralph` from a terminal afterward.
-version: 2.0.0
+version: 1.1.0
 ---
 
 # Ralph Skill (v2)
@@ -177,6 +177,8 @@ Initial state, picked up by the loop on first run:
   "last_commit": null,
   "last_commit_sha": null,
   "last_planner_note": null,
+  "builder_executor": "claude",
+  "planner_executor": "claude",
   "builder_model": "claude-sonnet-4-6",
   "planner_model": "claude-opus-4-7",
   "total_cost_usd": 0,

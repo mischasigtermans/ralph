@@ -8,10 +8,25 @@
 
 set -e
 
-VERSION="2.0.0"
+VERSION="1.1.0"
 
-BUILDER_MODEL="${RALPH_BUILDER_MODEL:-claude-sonnet-4-6}"
-PLANNER_MODEL="${RALPH_PLANNER_MODEL:-claude-opus-4-7}"
+BUILDER_EXECUTOR="${RALPH_BUILDER_EXECUTOR:-claude}"
+PLANNER_EXECUTOR="${RALPH_PLANNER_EXECUTOR:-claude}"
+
+case "$BUILDER_EXECUTOR" in claude|grok) ;; *) echo "Error: RALPH_BUILDER_EXECUTOR must be 'claude' or 'grok' (got '$BUILDER_EXECUTOR')" >&2; exit 1;; esac
+case "$PLANNER_EXECUTOR" in claude|grok) ;; *) echo "Error: RALPH_PLANNER_EXECUTOR must be 'claude' or 'grok' (got '$PLANNER_EXECUTOR')" >&2; exit 1;; esac
+
+if [ "$BUILDER_EXECUTOR" = "grok" ]; then
+    BUILDER_MODEL="${RALPH_BUILDER_MODEL:-grok-build}"
+else
+    BUILDER_MODEL="${RALPH_BUILDER_MODEL:-claude-sonnet-4-6}"
+fi
+
+if [ "$PLANNER_EXECUTOR" = "grok" ]; then
+    PLANNER_MODEL="${RALPH_PLANNER_MODEL:-grok-build}"
+else
+    PLANNER_MODEL="${RALPH_PLANNER_MODEL:-claude-opus-4-7}"
+fi
 
 resolve_script_dir() {
     local src="${BASH_SOURCE[0]}"
@@ -49,8 +64,10 @@ Usage:
   ralph -h, --help       Show this help
 
 Environment:
-  RALPH_BUILDER_MODEL   Override builder model (default: $BUILDER_MODEL)
-  RALPH_PLANNER_MODEL  Override planner model (default: $PLANNER_MODEL)
+  RALPH_BUILDER_EXECUTOR  Builder CLI: claude or grok (default: $BUILDER_EXECUTOR)
+  RALPH_PLANNER_EXECUTOR  Planner CLI: claude or grok (default: $PLANNER_EXECUTOR)
+  RALPH_BUILDER_MODEL     Override builder model (default: $BUILDER_MODEL)
+  RALPH_PLANNER_MODEL     Override planner model (default: $PLANNER_MODEL)
 
 State files (in .ralph/ of the project):
   brief.md       prose brief written by /ralph (read-only after that)
@@ -218,6 +235,8 @@ EOF
             --argjson total "$total" \
             --argjson complete "$complete" \
             --argjson incomplete "$incomplete" \
+            --arg exec_executor "$BUILDER_EXECUTOR" \
+            --arg eval_executor "$PLANNER_EXECUTOR" \
             --arg exec_model "$BUILDER_MODEL" \
             --arg eval_model "$PLANNER_MODEL" \
             '{
@@ -237,6 +256,8 @@ EOF
                 last_commit: null,
                 last_commit_sha: null,
                 last_planner_note: null,
+                builder_executor: $exec_executor,
+                planner_executor: $eval_executor,
                 builder_model: $exec_model,
                 planner_model: $eval_model,
                 total_cost_usd: 0,
@@ -266,6 +287,52 @@ state_write_atomic() {
     mv "$tmp" .ralph/state.json
 }
 
+# Precedence for executor + model: env var > state.json > built-in default.
+# This runs after state.json passes validation. Script-top assignments already
+# applied env > default; here we replace the default with state.json when env
+# was unset.
+load_loop_config_from_state() {
+    local s
+    s=$(state_read)
+
+    if [ -z "${RALPH_BUILDER_EXECUTOR:-}" ]; then
+        local from_state
+        from_state=$(echo "$s" | jq -r '.builder_executor // empty')
+        [ -n "$from_state" ] && BUILDER_EXECUTOR="$from_state"
+    fi
+    if [ -z "${RALPH_PLANNER_EXECUTOR:-}" ]; then
+        local from_state
+        from_state=$(echo "$s" | jq -r '.planner_executor // empty')
+        [ -n "$from_state" ] && PLANNER_EXECUTOR="$from_state"
+    fi
+
+    case "$BUILDER_EXECUTOR" in claude|grok) ;; *) echo "Error: builder_executor must be 'claude' or 'grok' (got '$BUILDER_EXECUTOR' from .ralph/state.json)" >&2; exit 1;; esac
+    case "$PLANNER_EXECUTOR" in claude|grok) ;; *) echo "Error: planner_executor must be 'claude' or 'grok' (got '$PLANNER_EXECUTOR' from .ralph/state.json)" >&2; exit 1;; esac
+
+    if [ -z "${RALPH_BUILDER_MODEL:-}" ]; then
+        local from_state
+        from_state=$(echo "$s" | jq -r '.builder_model // empty')
+        if [ -n "$from_state" ]; then
+            BUILDER_MODEL="$from_state"
+        elif [ "$BUILDER_EXECUTOR" = "grok" ]; then
+            BUILDER_MODEL="grok-build"
+        else
+            BUILDER_MODEL="claude-sonnet-4-6"
+        fi
+    fi
+    if [ -z "${RALPH_PLANNER_MODEL:-}" ]; then
+        local from_state
+        from_state=$(echo "$s" | jq -r '.planner_model // empty')
+        if [ -n "$from_state" ]; then
+            PLANNER_MODEL="$from_state"
+        elif [ "$PLANNER_EXECUTOR" = "grok" ]; then
+            PLANNER_MODEL="grok-build"
+        else
+            PLANNER_MODEL="claude-opus-4-7"
+        fi
+    fi
+}
+
 # ----- Loop ------------------------------------------------------------------
 
 STOP_REQUESTED=false
@@ -293,14 +360,16 @@ run_iteration() {
     local role="$2"
     local message="$3"
 
-    local prompt_file model agent_desc
+    local prompt_file model agent_desc executor
     if [ "$role" = "builder" ]; then
         prompt_file="$BUILDER_PROMPT"
         model="$BUILDER_MODEL"
+        executor="$BUILDER_EXECUTOR"
         agent_desc="Implements one story per invocation. Reads .ralph/brief.md for plan-time context, picks the highest-priority incomplete story, implements it, runs quality checks, commits, marks passes:true."
     else
         prompt_file="$PLANNER_PROMPT"
         model="$PLANNER_MODEL"
+        executor="$PLANNER_EXECUTOR"
         agent_desc="Reviews progress against the brief. May rewrite stories.json and append to learnings.txt. Halts the loop if the brief itself needs rework."
     fi
 
@@ -322,23 +391,34 @@ run_iteration() {
 
     local output_json="$log_base.log.json"
     local output_text="$log_base.log"
+    local output_stderr="$log_base.log.stderr"
 
-    claude \
-        --dangerously-skip-permissions \
-        --agents "$agents_json" \
-        --agent "ralph-$role" \
-        --model "$model" \
-        --print \
-        --output-format json \
-        "$message" > "$output_json" 2>&1 &
+    if [ "$executor" = "grok" ]; then
+        grok \
+            --always-approve \
+            --agents "$agents_json" \
+            --agent "ralph-$role" \
+            --model "$model" \
+            --output-format json \
+            -p "$message" > "$output_json" 2> "$output_stderr" &
+    else
+        claude \
+            --dangerously-skip-permissions \
+            --agents "$agents_json" \
+            --agent "ralph-$role" \
+            --model "$model" \
+            --print \
+            --output-format json \
+            "$message" > "$output_json" 2> "$output_stderr" &
+    fi
     local pid=$!
 
     local spin_idx=0
     local label
     if [ "$role" = "builder" ]; then
-        label="Building iteration $iter ($model)"
+        label="Building iteration $iter ($executor:$model)"
     else
-        label="Planning iteration $iter ($model)"
+        label="Planning iteration $iter ($executor:$model)"
     fi
 
     while kill -0 $pid 2>/dev/null; do
@@ -352,7 +432,7 @@ run_iteration() {
     printf "\r\033[K"
 
     if [ "$exit_code" -ne 0 ]; then
-        echo "✗ claude exited $exit_code (see $output_json)" >&2
+        echo "✗ $executor exited $exit_code (see $output_json, stderr at $output_stderr)" >&2
         ITER_RESULT=""
         ITER_COST=0
         ITER_STOP_REASON="error_exit_code"
@@ -360,43 +440,59 @@ run_iteration() {
     fi
 
     if ! jq -e '.' "$output_json" > /dev/null 2>&1; then
-        echo "✗ claude output is not valid JSON (see $output_json)" >&2
+        echo "✗ $executor output is not valid JSON (see $output_json, stderr at $output_stderr)" >&2
         ITER_RESULT=""
         ITER_COST=0
         ITER_STOP_REASON="error_invalid_json"
         return 1
     fi
 
-    # claude --print --output-format json returns a stream of events as an array.
-    # The completion is in the last element with type == "result".
-    local result_event
-    result_event=$(jq -c '[.[]? | select(.type == "result")] | .[0] // empty' "$output_json")
-
-    if [ -z "$result_event" ]; then
-        echo "✗ No result event found in claude output (see $output_json)" >&2
-        ITER_RESULT=""
+    if [ "$executor" = "grok" ]; then
+        # grok --output-format json returns a single JSON object:
+        #   { "text": ..., "stopReason": "EndTurn", "sessionId": ..., "requestId": ... }
+        # grok.com login surfaces no per-call cost; drop the thought field.
+        ITER_RESULT=$(jq -r '.text // ""' "$output_json")
         ITER_COST=0
-        ITER_STOP_REASON="error_no_result_event"
-        return 1
+        ITER_SESSION_ID=$(jq -r '.sessionId // ""' "$output_json")
+        local grok_stop
+        grok_stop=$(jq -r '.stopReason // "unknown"' "$output_json")
+        case "$grok_stop" in
+            EndTurn)      ITER_STOP_REASON="end_turn" ;;
+            StopSequence) ITER_STOP_REASON="stop_sequence" ;;
+            *)            ITER_STOP_REASON="$grok_stop" ;;
+        esac
+    else
+        # claude --print --output-format json returns a stream of events as an array.
+        # The completion is in the last element with type == "result".
+        local result_event
+        result_event=$(jq -c '[.[]? | select(.type == "result")] | .[0] // empty' "$output_json")
+
+        if [ -z "$result_event" ]; then
+            echo "✗ No result event found in claude output (see $output_json)" >&2
+            ITER_RESULT=""
+            ITER_COST=0
+            ITER_STOP_REASON="error_no_result_event"
+            return 1
+        fi
+
+        ITER_RESULT=$(echo "$result_event" | jq -r '.result // ""')
+        ITER_COST=$(echo "$result_event" | jq -r '.total_cost_usd // 0')
+        ITER_STOP_REASON=$(echo "$result_event" | jq -r '.stop_reason // "unknown"')
+        ITER_SESSION_ID=$(echo "$result_event" | jq -r '.session_id // ""')
+
+        local is_error
+        is_error=$(echo "$result_event" | jq -r '.is_error // false')
+        if [ "$is_error" = "true" ]; then
+            local subtype api_err
+            subtype=$(echo "$result_event" | jq -r '.subtype // "unknown"')
+            api_err=$(echo "$result_event" | jq -r '.api_error_status // ""')
+            echo "✗ claude reported is_error=true (subtype: $subtype, api_status: $api_err). See $output_json" >&2
+            return 1
+        fi
     fi
 
-    ITER_RESULT=$(echo "$result_event" | jq -r '.result // ""')
-    ITER_COST=$(echo "$result_event" | jq -r '.total_cost_usd // 0')
-    ITER_STOP_REASON=$(echo "$result_event" | jq -r '.stop_reason // "unknown"')
-    ITER_SESSION_ID=$(echo "$result_event" | jq -r '.session_id // ""')
     ITER_LOG_PATH="$output_text"
-
     echo "$ITER_RESULT" > "$output_text"
-
-    local is_error
-    is_error=$(echo "$result_event" | jq -r '.is_error // false')
-    if [ "$is_error" = "true" ]; then
-        local subtype api_err
-        subtype=$(echo "$result_event" | jq -r '.subtype // "unknown"')
-        api_err=$(echo "$result_event" | jq -r '.api_error_status // ""')
-        echo "✗ claude reported is_error=true (subtype: $subtype, api_status: $api_err). See $output_json" >&2
-        return 1
-    fi
 
     if [ "$ITER_STOP_REASON" != "end_turn" ] && [ "$ITER_STOP_REASON" != "stop_sequence" ]; then
         echo "✗ Non-terminal stop_reason: $ITER_STOP_REASON (see $output_json)" >&2
@@ -531,6 +627,8 @@ run_loop() {
 
     validate_json_file ".ralph/state.json" ".ralph/state.json" || exit 1
     validate_json_file ".ralph/stories.json" ".ralph/stories.json" || exit 1
+
+    load_loop_config_from_state
 
     if [ ! -s ".ralph/brief.md" ]; then
         cat >&2 <<EOF
