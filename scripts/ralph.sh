@@ -56,6 +56,8 @@ ralph $VERSION - Autonomous AI development loop for Claude Code
 Usage:
   ralph                  Run the loop until complete or stopped
   ralph --max-iter N     Cap at N iterations
+  ralph --watch          After completing the batch, poll stories.json for new
+                         work instead of exiting. Stop with Ctrl-C or 'ralph stop'.
   ralph status           Print .ralph/state.json (pretty)
   ralph stop             Signal the running loop to stop after the current iteration
   ralph tail             Follow .ralph/progress.txt
@@ -68,6 +70,7 @@ Environment:
   RALPH_PLANNER_EXECUTOR  Planner CLI: claude or grok (default: $PLANNER_EXECUTOR)
   RALPH_BUILDER_MODEL     Override builder model (default: $BUILDER_MODEL)
   RALPH_PLANNER_MODEL     Override planner model (default: $PLANNER_MODEL)
+  RALPH_WATCH_POLL_SEC    Poll interval for --watch (default: 10)
 
 State files (in .ralph/ of the project):
   brief.md       prose brief written by /ralph (read-only after that)
@@ -691,6 +694,32 @@ EOF
         incomplete=$(jq '[.stories[]? | select(.passes == false)] | length' .ralph/stories.json 2>/dev/null || echo "0")
 
         if [ "$incomplete" -eq 0 ] && [ "$next_role" = "builder" ]; then
+            if [ "$WATCH_MODE" = true ]; then
+                mark_terminal_state "waiting"
+                echo "All stories complete. Watching .ralph/stories.json for new incomplete items every ${WATCH_POLL_SEC}s (Ctrl-C or 'ralph stop' to exit)..."
+                printf "## %s: batch complete, entering watch mode\n\n---\n\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> .ralph/progress.txt
+                while true; do
+                    if [ "$STOP_REQUESTED" = true ]; then
+                        mark_terminal_state "stopped"
+                        echo "Stopped while watching."
+                        exit 0
+                    fi
+                    sleep "$WATCH_POLL_SEC"
+                    local watch_incomplete
+                    watch_incomplete=$(jq '[.stories[]? | select(.passes == false)] | length' .ralph/stories.json 2>/dev/null || echo "0")
+                    if [ "$watch_incomplete" -gt 0 ]; then
+                        local s_resume now_resume
+                        s_resume=$(state_read)
+                        now_resume=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                        s_resume=$(echo "$s_resume" | jq --arg now "$now_resume" '.status = "running" | .updated_at = $now')
+                        state_write_atomic "$s_resume"
+                        printf "## %s: watch resumed (%s new incomplete stories)\n\n---\n\n" "$now_resume" "$watch_incomplete" >> .ralph/progress.txt
+                        echo "Found $watch_incomplete incomplete story/stories. Resuming."
+                        break
+                    fi
+                done
+                continue
+            fi
             mark_terminal_state "complete"
             echo "All stories complete."
             exit 0
@@ -718,6 +747,11 @@ EOF
         iter_count=$((iter_count + 1))
 
         if echo "$ITER_RESULT" | grep -qF "$SENTINEL_COMPLETE"; then
+            if [ "$WATCH_MODE" = true ]; then
+                echo "Builder declared COMPLETE. Watch mode: routing to waiting on next loop pass instead of exiting."
+                printf "## %s: builder emitted COMPLETE, watch mode routing to waiting\n\n---\n\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> .ralph/progress.txt
+                continue
+            fi
             mark_terminal_state "complete"
             echo "✓ Loop complete."
             exit 0
@@ -779,6 +813,8 @@ case "${1:-}" in
 esac
 
 MAX_ITERATIONS=0
+WATCH_MODE=false
+WATCH_POLL_SEC="${RALPH_WATCH_POLL_SEC:-10}"
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --max-iter)
@@ -787,6 +823,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --max-iter=*)
             MAX_ITERATIONS="${1#--max-iter=}"
+            shift
+            ;;
+        --watch)
+            WATCH_MODE=true
             shift
             ;;
         *)
@@ -799,6 +839,10 @@ done
 
 if ! [[ "$MAX_ITERATIONS" =~ ^[0-9]+$ ]]; then
     echo "Error: --max-iter must be a non-negative integer." >&2
+    exit 1
+fi
+if ! [[ "$WATCH_POLL_SEC" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: RALPH_WATCH_POLL_SEC must be a positive integer (got '$WATCH_POLL_SEC')." >&2
     exit 1
 fi
 
